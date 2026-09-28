@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ego Link · 传感数据展示（第 1 周）</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>Ego Link 传感数据展示</h1>
+  <div class="sub">第 1 周 · 开发板采集 → 服务端接收存储 → 页面展示</div>
+</header>
+
+<main>
+  <section class="card state" id="stateCard">
+    <div class="state-row">
+      <span class="dot" id="dot"></span>
+      <strong id="connText">正在连接服务端…</strong>
+    </div>
+    <div class="state-sub" id="updateText">—</div>
+  </section>
+
+  <section class="card reading">
+    <div class="reading-head">
+      <span>加速度合矢量 |a|</span>
+      <span class="unit">g</span>
+    </div>
+    <div class="big" id="mag">—</div>
+    <div class="hint" id="magHint">静止时应接近 1.000 g</div>
+    <div class="axes">
+      <div><label>ax</label><span id="ax">—</span></div>
+      <div><label>ay</label><span id="ay">—</span></div>
+      <div><label>az</label><span id="az">—</span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>本次观测</h2>
+    <dl class="meta">
+      <dt>设备标识</dt><dd id="deviceId">—</dd>
+      <dt>记录标识</dt><dd id="recordId">—</dd>
+      <dt>传感源</dt><dd id="sensor">—</dd>
+      <dt>采集时间</dt><dd id="observedAt">—</dd>
+      <dt>时间质量</dt><dd id="timeQuality">—</dd>
+      <dt>服务端接收时间</dt><dd id="receivedAt">—</dd>
+      <dt>数据年龄</dt><dd id="age">—</dd>
+    </dl>
+  </section>
+
+  <section class="card">
+    <h2>累计记录</h2>
+    <dl class="meta">
+      <dt>服务端已存条数</dt><dd id="total">—</dd>
+      <dt>设备列表</dt><dd id="devices">—</dd>
+      <dt>最大上报间隔</dt><dd id="gap">—</dd>
+    </dl>
+    <div class="actions">
+      <button id="refresh">刷新已存数据</button>
+      <span class="note">本页只读取服务端已保存的记录，不会触发设备重新采集（那是第 2 周的任务）</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>最近记录</h2>
+    <div class="table-wrap">
+      <table id="histTable">
+        <thead><tr><th>#</th><th>记录标识</th><th>|a| (g)</th><th>采集时间</th><th>接收时间</th></tr></thead>
+        <tbody><tr><td colspan="5" class="empty">暂无记录</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span id="serverInfo">—</span>
+</footer>
+
+<script>
+const STALE_AFTER_S = 5;
+let lastOk = 0;
+
+function fmt(v, digits) {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(digits) : String(v);
+}
+
+async function getJson(url) {
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+function renderStats(s, health) {
+  document.getElementById('total').textContent = s.total ?? 0;
+  document.getElementById('devices').textContent = (s.devices && s.devices.length) ? s.devices.join(', ') : '—';
+  document.getElementById('gap').textContent = s.gap_s === null || s.gap_s === undefined ? '—' : s.gap_s + ' s';
+  if (health) {
+    document.getElementById('serverInfo').textContent =
+      '服务端 ' + health.service + ' · 已存 ' + health.stored_records + ' 条 · 服务器时间 ' + health.server_time;
+  }
+  if (!s.total) {
+    document.getElementById('mag').textContent = '—';
+    document.getElementById('ax').textContent = '—';
+    document.getElementById('ay').textContent = '—';
+    document.getElementById('az').textContent = '—';
+    document.getElementById('deviceId').textContent = '—';
+    document.getElementById('recordId').textContent = '—';
+    document.getElementById('sensor').textContent = '—';
+    document.getElementById('observedAt').textContent = '—';
+    document.getElementById('timeQuality').textContent = '—';
+    document.getElementById('receivedAt').textContent = '—';
+    document.getElementById('age').textContent = '—';
+    document.getElementById('magHint').textContent = '服务端暂无记录：等待开发板上报';
+    return;
+  }
+  const v = s.last_value || {};
+  document.getElementById('mag').textContent = fmt(v.magnitude, 3);
+  document.getElementById('ax').textContent = fmt(v.ax, 3);
+  document.getElementById('ay').textContent = fmt(v.ay, 3);
+  document.getElementById('az').textContent = fmt(v.az, 3);
+  document.getElementById('deviceId').textContent = s.devices ? s.devices.join(', ') : '—';
+  document.getElementById('recordId').textContent = s.last_record_id ?? '—';
+  document.getElementById('sensor').textContent = 'imu_accel（QMA6100P 加速度计）';
+  document.getElementById('observedAt').textContent = s.last_observed_at ?? '—';
+  const tq = s.last_time_quality;
+  document.getElementById('timeQuality').textContent =
+    tq === 'sntp' ? 'sntp（已对时）' : (tq === 'uncalibrated' ? 'uncalibrated（未校准，仅相对时间）' : (tq ?? '—'));
+  document.getElementById('receivedAt').textContent = s.last_received_at ?? '—';
+
+  const age = s.newest_age_s;
+  document.getElementById('age').textContent = (age === null || age === undefined) ? '—' : age + ' s';
+  const stale = (age !== null && age !== undefined && age > STALE_AFTER_S);
+  document.getElementById('magHint').textContent = stale
+    ? '数据未更新：以上为最后一次成功采集的值，保留原采集时间'
+    : '静止时应接近 1.000 g';
+  document.getElementById('stateCard').classList.toggle('stale', stale);
+}
+
+async function renderHistory() {
+  const h = await getJson('/api/observations?limit=10');
+  const tb = document.querySelector('#histTable tbody');
+  if (!h.items || !h.items.length) {
+    tb.innerHTML = '<tr><td colspan="5" class="empty">暂无记录</td></tr>';
+    return;
+  }
+  tb.innerHTML = h.items.slice().reverse().map(r =>
+    '<tr><td>' + (r.server_seq ?? '') + '</td><td>' + (r.record_id ?? '') + '</td><td>' +
+    fmt((r.value || {}).magnitude, 3) + '</td><td>' + (r.observed_at ?? '') + '</td><td>' +
+    (r.received_at ?? '') + '</td></tr>').join('');
+}
+
+async function tick() {
+  try {
+    const [s, health] = await Promise.all([getJson('/api/stats'), getJson('/api/health')]);
+    lastOk = Date.now();
+    document.getElementById('dot').className = 'dot ok';
+    document.getElementById('connText').textContent = '服务端在线';
+    document.getElementById('updateText').textContent = '最后刷新 ' + new Date().toLocaleTimeString('zh-CN');
+    renderStats(s, health);
+  } catch (err) {
+    document.getElementById('dot').className = 'dot bad';
+    document.getElementById('connText').textContent = '服务端不可达';
+    document.getElementById('updateText').textContent = String(err);
+    document.getElementById('magHint').textContent =
+      lastOk ? '页面无法连接服务端：下方数值为最后一次成功读取，非实时' : '页面无法连接服务端';
+  }
+}
+
+document.getElementById('refresh').addEventListener('click', () => { tick(); renderHistory(); });
+tick();
+renderHistory();
+setInterval(tick, 1000);
+setInterval(renderHistory, 5000);
+</script>
+</body>
+</html>

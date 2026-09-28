@@ -1,0 +1,36 @@
+# ---- 密钥与本地配置（课程红线：不得进入仓库）----
+secrets.h
+secrets.*
+.env
+*.local
+credentials.*
+
+# ---- 构建产物 ----
+.pio/
+.pioenvs/
+.piolibdeps/
+build/
+dist/
+*.bin
+*.elf
+*.map
+*.hex
+
+# ---- 编辑器与系统 ----
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ---- 运行时数据 ----
+server/data/
+*.db
+*.sqlite3
+server/logs/
+*.log
+
+# ---- 临时笔记 ----
+docs/_*.html
+docs/_*.json
