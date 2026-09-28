@@ -16,7 +16,7 @@
  *       ★ PWDN / RESET 在 S3-EYE 上【未连接】→ 必须填 -1
  *         （esp32-camera 自带测试文件里写的 PWDN=43/RESET=44 是别的板子；
  *           在 S3-EYE 上 GPIO43/44 是 LCD 的 DC/CS，照抄会把屏幕搞坏）
- *   · SCCB（I2C）走 GPIO4/5，与板载 QMA7981 IMU 【同一条总线】，
+ *   · SCCB（I2C）走 GPIO4/5，与板载 QMA6100P IMU 【同一条总线】，
  *     因此复用 IMU 已建好的端口，不另建总线
  *   · 帧缓冲放 PSRAM（板载 8MB Octal），见 sdkconfig.defaults 的 CONFIG_SPIRAM*
  * ===================================================================== */

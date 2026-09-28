@@ -952,6 +952,32 @@ function isDuplicateFrame(device, seq) {
   return false;
 }
 
+/** 从一行文本中取出 JSON 对象：支持整行 JSON，也支持「日志前缀 + JSON」的行。 */
+function extractJsonObject(text) {
+  const i = text.indexOf('{');
+  if (i < 0) return null;
+  const cand = i === 0 ? text : text.slice(i);
+  try {
+    const o = JSON.parse(cand);
+    return (o && typeof o === 'object' && !Array.isArray(o)) ? o : null;
+  } catch (_) { return null; }
+}
+
+/** 把嵌套的 value{ax,ay,az,magnitude} 提到顶层，与扁平帧（acc_x_g 等）共用同一套字段映射。 */
+function flattenValueObject(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  const v = obj.value;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return obj;
+  const res = Object.assign({}, obj);
+  const alias = { ax: 'acc_x_g', ay: 'acc_y_g', az: 'acc_z_g', magnitude: 'acc_mag_g' };
+  for (const [k, val] of Object.entries(v)) {
+    if (typeof val !== 'number' || !Number.isFinite(val)) continue;
+    const key = alias[k] || k;
+    if (!(key in res)) res[key] = val;
+  }
+  return res;
+}
+
 function handleLine(line, source) {
   if (!line) return;
   const trimmed = line.trim();
@@ -971,11 +997,12 @@ function handleLine(line, source) {
   const others = {};     // 非数值字段（字符串/布尔），如 device、mac、iso
   const meta = {};       // 设备身份与板端时间等元数据
 
-  // 1) 优先按 JSON 解析
-  if (trimmed[0] === '{') {
-    try {
-      const obj = JSON.parse(trimmed);
+  // 1) 优先按 JSON 解析（兼容「日志前缀 + JSON」的行，如 [post] {...}）
+  if (trimmed.indexOf('{') >= 0) {
+    {
+      let obj = extractJsonObject(trimmed);
       if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+        obj = flattenValueObject(obj);
         // 板端回执（远程采集）：单独处理，不当作传感数据，直接返回
         if (obj.type === 'ack') {
           stats.linesValid++;
@@ -1005,7 +1032,7 @@ function handleLine(line, source) {
         }
         if (Object.keys(n).length) numbers = n;
       }
-    } catch (_) { /* 不是合法 JSON，继续尝试其他格式 */ }
+    }
   }
 
   // 2) 键=值 / 键: 值（兼容已烧好、非 JSON 的固件；元数据键不在此路径提取，仅 WiFi/JSON 固件带身份）

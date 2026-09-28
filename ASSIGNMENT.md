@@ -9,9 +9,9 @@
 
 | # | 教师要求 | 本项目交付物 / 证据 |
 |---|---|---|
-| 1 | 用智能体采集**一个真实传感源**并上报自己的 VPS/Web 平台并验证 | 板端 `firmware/s3eye_imu_idf/`（ESP-IDF 工程）：QMA7981 三轴 IMU 采集 + WiFi HTTP 上报 + USB 串口兜底；服务端 `/api/data` 接收 |
+| 1 | 用智能体采集**一个真实传感源**并上报自己的 VPS/Web 平台并验证 | 板端 `firmware/s3eye_imu_idf/`（ESP-IDF 工程）：QMA6100P 三轴 IMU 采集 + WiFi HTTP 上报 + USB 串口兜底；服务端 `/api/data` 接收 |
 | 2 | 前 2 学时：分析 **板 / VPS / 浏览器** 分工 | 见 §1 三方分工图与表 |
-| 3 | 基于**设备型号、实际接线、驱动参考**建立项目、编译、烧录、采集、**验证单位与时间** | §2 依据（ESP32-S3-EYE + QMA7981 @ I²C GPIO4/5，来自官方 BSP）；§3 单位与时间核对 |
+| 3 | 基于**设备型号、实际接线、驱动参考**建立项目、编译、烧录、采集、**验证单位与时间** | §2 依据（ESP32-S3-EYE + QMA6100P @ I²C GPIO4/5，来自官方 BSP）；§3 单位与时间核对 |
 | 4 | 后 2 学时：**最小接收 + 存储服务、查询接口、网页** | `server.js`（NDJSON 落盘 + `/api/records` + `/api/devices` + `/api/records.csv`）；`public/*` 网页 |
 | 5 | 部署到**分配的 VPS 空间** | §5 部署入口（`HOST`/`PORT` 环境变量、`config.json`） |
 | 6 | **修改板端上传逻辑** | 固件 `upload()` 定时 HTTP POST JSON 到 `/api/data`（含 device/mac/ts/iso + IMU 三轴） |
@@ -26,7 +26,7 @@
 | 15 | **USB 仅用于调试，不能冒充独立网络上传** | ✅ **已跑通**：板端 IP `10.1.41.123`，`/api/state` 的 `transport` 为 `wifi`。**证明方法**：`POST /api/disconnect` 释放串口（等价于拔 USB）后，`seq` 仍持续增长（实测 12 秒 +83 帧）。USB 仅用于烧录与串口日志。详见 §6.2 |
 | 16 | **第 2 周**：实现 Web **远程采集指令**与**执行结果反馈** | 「远程采集」页 `#collect`：`POST /api/collect` 下发命令 → 板端 `collect_once` 立即采集并回传；状态机 `submitted→dispatched→acked→completed / timeout / failed` |
 | 17 | 证明「**新采集**」而非页面重显**旧值** | `request_id` 回环 + 板端 `seq` 严格递增 + 到达时刻晚于下发 + **页面只认 request_id**；界面逐条打勾（§9） |
-| 18 | 设计**目标设备、传感源、request_id、完成条件** | 目标设备 `S3EYE-GROUP01`；传感源 QMA7981 三轴加速度；`request_id` = `req-YYYYMMDD-HHMMSS-NNNN`；完成条件 = 收到带该 id 的观测**且 seq 递增** |
+| 18 | 设计**目标设备、传感源、request_id、完成条件** | 目标设备 `S3EYE-GROUP01`；传感源 QMA6100P 三轴加速度；`request_id` = `req-YYYYMMDD-HHMMSS-NNNN`；完成条件 = 收到带该 id 的观测**且 seq 递增** |
 | 19 | 当堂验证：暂停周期上报、**保持命令通道**、改变设备状态后采集 | 「暂停周期上报」按钮 → 命令通道**独立保持**，采集仍返回新观测（§9.3 实测） |
 | 20 | 测试**关机 / 重复点击**；超时**不判硬件故障** | 断开设备 → `timeout`（观测区为空，**不拿旧值冒充**）；连点 3 次 → 3 个独立 id 各自采样 |
 | 21 | 提交：远程采集功能、请求—回执—新观测记录、**首版状态图** | §9 + [`docs/week2-remote-collect.md`](docs/week2-remote-collect.md)（含 mermaid 状态图与时序图） |
@@ -89,7 +89,7 @@ HOST=0.0.0.0 PORT=8080 npm start
         │  ESP32 开发板 │ ──POST /api/data──▶ │  服务端 (Node.js) │ ──实时推送────▶ │  浏览器网页  │
         │ (采集+上传)  │ ◀── 无需回传 ── │ 接收/落盘/查询   │ ◀──GET /api/*──── │ (展示+回溯)  │
         └─────────────┘                 └──────────────────┘                └──────────────┘
-        采集方：QMA7981 IMU              中转+存储：NDJSON 落盘              展示方：三轴面板+
+        采集方：QMA6100P IMU              中转+存储：NDJSON 落盘              展示方：三轴面板+
         来源必须真实                      一帧观测=一条记录                  VPS记录查询
 ```
 
@@ -109,13 +109,13 @@ HOST=0.0.0.0 PORT=8080 npm start
 
 | 项目 | 结论 | 依据 |
 |---|---|---|
-| 三轴传感器 | **QMA7981** 加速度计，I²C 地址 `0x12` | 官方 BSP `BSP_CAPS_IMU` 虽为 0（未暴露驱动），但板上确有 QMA7981；固件先 `i2cScan()` 再按 ID 验证 |
+| 三轴传感器 | **QMA6100P** 加速度计，I²C 地址 `0x12` | 官方 BSP `BSP_CAPS_IMU` 虽为 0（未暴露驱动），但板上确有 QMA6100P；固件先 `i2cScan()` 再按 ID 验证 |
 | I²C 引脚 | **SDA = GPIO4，SCL = GPIO5** | `esp-bsp` 中 `BSP_I2C_SDA=GPIO_NUM_4`、`BSP_I2C_SCL=GPIO_NUM_5` |
-| 器件 ID 校验 | 读寄存器 `0x00` 应为 `0xE7` | QMA7981 数据手册；固件 `imuInit()` 先验 ID 再启用 |
-| 数据寄存器 | X=0x01, Y=0x03, Z=0x05；active 指令写 0x11=`0xC0` | QMA7981 数据手册 |
+| 器件 ID 校验 | 读寄存器 `0x00` 应为 `0xE7` | QMA6100P 数据手册；固件 `imuInit()` 先验 ID 再启用 |
+| 数据寄存器 | X=0x01, Y=0x03, Z=0x05；active 指令写 0x11=`0xC0` | QMA6100P 数据手册 |
 | 量程/精度 | 14bit 左对齐，默认 ±2g，满量程 `0x1FFF`(8191) | 由 `raw>>2` 还原，再折算 g 与 m/s² |
 
-**重要前提**：ESP32-S3-EYE **没有 USB-UART 桥接芯片**，所有 GPIO 已被摄像头/LCD/麦克风/SD/按键占用，**不外接任何传感器**；三轴数据来自板载 QMA7981。若 IMU 不可用，固件退化为上传芯片内部温度（仍是真实来源），并在日志说明。
+**重要前提**：ESP32-S3-EYE **没有 USB-UART 桥接芯片**，所有 GPIO 已被摄像头/LCD/麦克风/SD/按键占用，**不外接任何传感器**；三轴数据来自板载 QMA6100P。若 IMU 不可用，固件退化为上传芯片内部温度（仍是真实来源），并在日志说明。
 
 ---
 
@@ -319,7 +319,7 @@ node test/help-test.js        # 26 项  第 3 周教学求助闭环（状态不�
 
 ## 8. 提交清单（作业要求）
 
-- [x] **板端代码**：`firmware/s3eye_imu_idf/`（ESP-IDF 工程，`main/main.c` + `main/app_config.h`：`APP_DEVICE_ID`、QMA7981 IMU 读取、NTP 对时、WiFi 上传 + USB 串口兜底）
+- [x] **板端代码**：`firmware/s3eye_imu_idf/`（ESP-IDF 工程，`main/main.c` + `main/app_config.h`：`APP_DEVICE_ID`、QMA6100P IMU 读取、NTP 对时、WiFi 上传 + USB 串口兜底）
 - [x] **服务端代码**：`server.js`（接收 / NDJSON 落盘 / 查询接口 / WebSocket 推送 / 三态策略 / 身份校验）
 - [x] **网页代码**：`public/index.html` `app.js` `style.css`（三轴展示、未更新提示、VPS 查询、本组校验；**未写死任何数值**）
 - [x] **部署入口**：§5（`HOST`/`PORT` 环境变量、`config.json`、板端 `SERVER_HOST` 对照）

@@ -1,35 +1,67 @@
-# ---- 密钥与本地配置（课程红线：不得进入仓库）----
-secrets.h
-secrets.*
-!secrets.example.h
-.env
-*.local
-credentials.*
+# ================= 本仓库通用 =================
 
-# ---- 构建产物（带目录限定，避免误伤 prev/ 子项目）----
-.pio/
-.pioenvs/
-.piolibdeps/
-board/build/
-dist/
-*.bin
-*.elf
-*.hex
-
-# ---- 编辑器与系统 ----
+# 编辑器与系统
 .vscode/
 .idea/
 *.swp
 Thumbs.db
+Desktop.ini
 desktop.ini
 .DS_Store
 
-# ---- 运行时数据（仅本工程的 Python 服务端，勿影响 prev/ 子项目）----
-server/data/
-server/logs/
-server/*.log
+# ================= 服务端（Node.js，仓库根）=================
+
+# 依赖
+node_modules/
+
+# 本地私密配置 / 凭据
+secrets.h
+secrets.*
+!secrets.example.h
+app_config.local.h
+.env
+*.local
+credentials.*
+
+# 运行时数据（真实采集数据，本地保留）
+data/*.ndjson
+data/records.*.ndjson
+recordings/*.csv
 *.db
 *.sqlite3
+server/*.log
+*.log
+_*.log
+_idf*.log
+server.log
 
-# ---- 临时笔记 ----
+# ================= 板端固件 =================
+
+# ESP-IDF 构建产物（可重新生成）
+firmware/s3eye_imu_idf/build/
+firmware/s3eye_imu_idf/sdkconfig.old
+firmware/s3eye_imu_idf/managed_components/
+firmware/s3eye_imu_idf/dependencies.lock
+sdkconfig.bak*
+*.bak.*
+
+# PlatformIO 构建产物（board/ 备用固件）
+.pio/
+.pioenvs/
+.piolibdeps/
+board/build/
+
+# 固件二进制
+*.bin
+*.elf
+*.hex
+
+# ================= 备用 Python 服务端（server/ 目录）=================
+
+server/data/
+server/*.jsonl
+
+# ================= 临时与草稿 =================
+
 docs/_*
+dist/

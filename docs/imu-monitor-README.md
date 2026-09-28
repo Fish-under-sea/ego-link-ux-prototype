@@ -101,7 +101,7 @@ imu-monitor/                    # ← 本项目即一个自包含文件夹，所
 │   ├── style.css
 │   └── app.js                # WebSocket 接收、卡片渲染、Canvas 绘制（含滑动平均）、记录查询、分页路由
 ├── firmware/
-│   ├── s3eye_imu_idf/        # ★ 当前使用：ESP-IDF 工程（QMA7981 三轴 + 10Hz 上报 + 校准）
+│   ├── s3eye_imu_idf/        # ★ 当前使用：ESP-IDF 工程（QMA6100P 三轴 + 10Hz 上报 + 校准）
 │   │   ├── CMakeLists.txt
 │   │   ├── sdkconfig.defaults
 │   │   ├── tools/
@@ -219,7 +219,7 @@ ESP32-S3-EYE（含 SUB_V1.1 子板）有三个与其他板子不同的关键点�
 通信完全靠 ESP32-S3 内置 USB Serial/JTAG（GPIO19/20）。所以 COM 口的 VID 一定是 `303A`，**这是唯一通道，没有第二个串口可选**。
 
 **2. 所有 GPIO 都已被占用**
-摄像头 OV2640、1.3" LCD（SPI）、I2S 数字麦克风、MicroSD、QMA7981 加速度计（I2C）、6 个按键已占满全部 GPIO，官方文档明确写明 *"all GPIOs ... have already been used"*。
+摄像头 OV2640、1.3" LCD（SPI）、I2S 数字麦克风、MicroSD、QMA6100P 加速度计（I2C）、6 个按键已占满全部 GPIO，官方文档明确写明 *"all GPIOs ... have already been used"*。
 → **外接 ADC 传感器在这块板上不可行**。可用的是芯片内部数据源：`temperatureRead()`（内部温度）、`ESP.getFreeHeap()`、`millis()`；若要用加速度计/麦克风需自行驱动其总线。
 
 **3. 出厂固件是 ESP-IDF + ESP-WHO，console 可能不在 USB 口**

@@ -1,5 +1,5 @@
 /* =====================================================================
- * ESP32-S3-EYE —— QMA7981 三轴加速度采集 + 上报（ESP-IDF 版）
+ * ESP32-S3-EYE —— QMA6100P 三轴加速度采集 + 上报（ESP-IDF 版）
  *
  * 双通道上报（同一份真实数据，绝不生成/模拟）：
  *   1) WiFi  → HTTP POST http://<APP_SERVER_HOST>:<APP_SERVER_PORT>/api/data
@@ -8,8 +8,8 @@
  * 硬件依据（来自官方资料，非猜测）：
  *   - ESP32-S3-EYE 无 USB-UART 桥接芯片，板载 I2C：SDA=GPIO4 / SCL=GPIO5
  *     （esp-bsp: BSP_I2C_SDA=GPIO_NUM_4, BSP_I2C_SCL=GPIO_NUM_5）
- *   - QMA7981：地址 0x12，ID 寄存器 0x00 期望 0xE7，数据寄存器 X=0x01 Y=0x03 Z=0x05，
- *     写 0x11=0xC0 进入 active，14bit 左对齐，默认 ±2g（满量程 0x1FFF）
+ *   - IMU QMA6100P：地址 0x12，ID 寄存器 0x00 = 0x90（本板实测），数据寄存器 X=0x01 Y=0x03 Z=0x05,
+ *     写 0x0F=0x01 设 ±2g、0x11=0x84 进入 active；数据右对齐，4096 LSB/g（满量程 8191）
  *   - 单位核对：静止水平放置时 Z 轴应约 +1g ≈ +9.8 m/s²
  *   - 时间核对：板端 NTP 取 UTC 时间戳，服务端另记接收时间，两者可对照
  * ===================================================================== */
@@ -55,16 +55,22 @@
 
 static const char *TAG = "S3EYE";
 
-/* ---------------------- QMA7981 ---------------------- */
+/* ---------------------- IMU QMA6100P ---------------------- */
 #define QMA_ADDR        0x12
 #define QMA_REG_CHIPID  0x00
-#define QMA_REG_PWR     0x11
-#define QMA_REG_DXM     0x01
-#define QMA_REG_RANGE   0x0F    /* FSR 量程寄存器 */
-#define QMA_ACTIVE_CMD  0xC0
-#define QMA_FULLSCALE   8191.0f   /* 0x1FFF */
-#define QMA_RANGE_G     2.0f      /* 默认 ±2g */
-#define QMA_CALIBRATION 0.765f    /* 本板 QMA7981 灵敏度偏高 ~31%；校准使静止 |a|≈1.0g */
+#define QMA_REG_PWR     0x11    /* active 命令 0x84（乐鑫 qma6100p.c 官方值；原 0xC0 是 QMA7981 的值） */
+#define QMA_REG_BW_ODR  0x10    /* 带宽 / ODR */
+#define QMA_REG_DXM     0x01    /* 数据起始寄存器：0x01..0x06 = X/Y/Z 各 2 字节 */
+#define QMA_REG_RANGE   0x0F    /* FSR 量程；±2g = 0b0001 = 0x01（原写 0x00 不是合法档位） */
+#define QMA_ACTIVE_CMD  0x84
+/* 器件实为 QMA6100P：本板 WHO_AM_I 实测 0x90，与 esp-bsp/components/qma6100p 的
+ * QMA6100P_WHO_AM_I_VAL = 0x90 一致（QMA7981 应为 0xE7）。
+ * 数据右对齐（QMA7981 那套「14bit 左对齐」不适用）：
+ *   原始值 = (int16_t)((HIGH << 8) + LOW)；设备值 = 原始值 / 4；
+ *   ±2g 灵敏度 4096 LSB/g → 加速度(g) = 设备值 / 4096。
+ * 2026-09-28 本板实测：正确解析后静止合矢量约 0.95 g，无需任何校准系数；
+ * 原 QMA_CALIBRATION 0.765f 是为掩盖记错型号造成的 4 倍偏差，已移除。 */
+#define QMA_SENS_LSB_PER_G  4096.0f   /* ±2g */
 #define G_TO_MS2        9.80665f
 
 #define I2C_SDA_GPIO    4
@@ -138,7 +144,7 @@ static char s_ip[16] = "0.0.0.0";
 static uint32_t s_seq = 0, s_ok = 0, s_fail = 0;
 static char     s_mac[13] = "000000000000";
 
-/* ===================== I2C / QMA7981 ===================== */
+/* ===================== I2C / IMU QMA6100P ===================== */
 
 static esp_err_t qma_read(uint8_t reg, uint8_t *buf, size_t len)
 {
@@ -165,7 +171,7 @@ static void i2c_scan(void)
     if (!s_imu_scan[0]) snprintf(s_imu_scan, sizeof(s_imu_scan), "(无响应设备)");
 }
 
-/* 在指定 I2C 端口上尝试初始化 QMA7981；返回 true 表示数据可读 */
+/* 在指定 I2C 端口上尝试初始化 IMU；返回 true 表示数据可读 */
 static bool imu_init_on_port(i2c_port_num_t port)
 {
     i2c_master_bus_config_t bus_cfg = {
@@ -188,27 +194,31 @@ static bool imu_init_on_port(i2c_port_num_t port)
         .scl_speed_hz = 400000,
     };
     if (i2c_master_bus_add_device(s_bus, &dev_cfg, &s_dev) != ESP_OK) {
-        ESP_LOGE(TAG, "QMA7981 (0x%02X) 设备添加失败", QMA_ADDR);
+        ESP_LOGE(TAG, "IMU QMA6100P (0x%02X) 设备添加失败", QMA_ADDR);
         return false;
     }
 
     uint8_t id = 0;
     if (qma_read(QMA_REG_CHIPID, &id, 1) != ESP_OK) {
-        ESP_LOGE(TAG, "读取 QMA7981 ID 失败");
+        ESP_LOGE(TAG, "读取 IMU ID 失败");
         return false;
     }
     s_imu_id = id;
-    ESP_LOGI(TAG, "QMA7981 WHO_AM_I = 0x%02X (本板实测 0x90，故不做 ID 强校验)", id);
-    if (id != 0xE7) {
-        ESP_LOGW(TAG, "QMA7981 ID 不匹配，仍尝试读取（可能是兼容型号）");
+    if (id == 0x90) {
+        ESP_LOGI(TAG, "IMU = QMA6100P (WHO_AM_I=0x90，与官方驱动常量一致)");
+    } else if (id == 0xE7) {
+        ESP_LOGW(TAG, "IMU = QMA7981 (WHO_AM_I=0xE7)：数据为 14bit 左对齐，本文件的 /4 解析不适用");
+    } else {
+        ESP_LOGW(TAG, "IMU WHO_AM_I=0x%02X 未知型号，按 QMA6100P 解析", id);
     }
     /* 显式设置量程 ±2g（寄存器 0x0F bits[1:0]=00），
      * 部分变体芯片默认量程可能不同，不设置会导致 g 值偏差。 */
-    qma_write(QMA_REG_RANGE, 0x00);
-    qma_write(QMA_REG_PWR, QMA_ACTIVE_CMD);   /* 进入 active */
+    qma_write(QMA_REG_RANGE, 0x01);          /* 显式设 ±2g（0b0001） */
+    qma_write(QMA_REG_BW_ODR, 0x00);
+    qma_write(QMA_REG_PWR, QMA_ACTIVE_CMD);  /* 进入 active */
     vTaskDelay(pdMS_TO_TICKS(60));
     s_imu_port = (int)port;                   /* 记下来给摄像头 SCCB 复用 */
-    ESP_LOGI(TAG, "QMA7981 初始化完成（±2g，14bit，端口 %d）", port);
+    ESP_LOGI(TAG, "IMU QMA6100P 初始化完成（±2g，4096 LSB/g，端口 %d）", port);
     return true;
 }
 
@@ -219,7 +229,7 @@ static bool imu_init(void)
     if (s_bus) { i2c_del_master_bus(s_bus); s_bus = NULL; s_dev = NULL; }
     if (imu_init_on_port(I2C_NUM_1)) return true;
     s_imu_id = 0;
-    ESP_LOGE(TAG, "QMA7981 在两路 I2C 上均未初始化成功");
+    ESP_LOGE(TAG, "IMU 在两路 I2C 上均未初始化成功");
     return false;
 }
 
@@ -230,11 +240,16 @@ static bool imu_read(int16_t out[3])
     int16_t x16 = (int16_t)((b[1] << 8) | b[0]);
     int16_t y16 = (int16_t)((b[3] << 8) | b[2]);
     int16_t z16 = (int16_t)((b[5] << 8) | b[4]);
-    /* QMA7981 14-bit 数据为左对齐：bit[1:0] 为零，需右移 2 位获得真实值。
+    /* QMA6100P：与官方驱动 esp-bsp/components/qma6100p 一致
+     *   raw = (int16_t)((HIGH << 8) + LOW) / 4;   // 整数除法得设备值
+     * 实测依据：本板静止时该值配合 4096 LSB/g 得合矢量约 1.0g。 */
+    /* QMA6100P：与官方驱动 esp-bsp/components/qma6100p 一致，
+     *   raw = (int16_t)((HIGH << 8) + LOW) / 4;   // 整数除法得设备值
+     * 实测依据：本板静止时该值配合 4096 LSB/g 得合矢量约 1.0g。 */
      * 但不同批次芯片的寄存器对齐方式可能不同。输出原始 16bit 以便诊断。 */
-    out[0] = x16 >> 2;
-    out[1] = y16 >> 2;
-    out[2] = z16 >> 2;
+    out[0] = (int16_t)(x16 / 4);
+    out[1] = (int16_t)(y16 / 4);
+    out[2] = (int16_t)(z16 / 4);
     return true;
 }
 
@@ -873,7 +888,7 @@ static int build_frame(char *body, size_t cap, const char *request_id)
         if (imu_read(raw)) {
             const char *axis[3] = { "x", "y", "z" };
             for (int i = 0; i < 3; i++) {
-                float g   = (float)raw[i] * QMA_RANGE_G / QMA_FULLSCALE * QMA_CALIBRATION;
+                float g   = (float)raw[i] / QMA_SENS_LSB_PER_G;   /* raw 已是设备值；±2g 下 4096 LSB/g */
                 float ms2 = g * G_TO_MS2;
                 n += snprintf(body + n, cap - n,
                               ",\"acc_%s_raw\":%d,\"acc_%s_g\":%.4f,\"acc_%s_ms2\":%.3f",
