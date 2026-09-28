@@ -1,0 +1,98 @@
+第 3 周固件 —— 烧录与开机验证记录（实物证据）
+================================================
+
+烧录时间：2026-09-21
+端口：COM4（ESP32-S3 原生 USB-Serial/JTAG，VID 303A）
+固件版本：fe028d8（与 Git 提交一致，见下方 app_init 日志）
+
+【烧录结果】
+  Wrote 966736 bytes (596228 compressed) at 0x00010000 in 5.5 seconds
+  Hash of data verified.          ← 应用镜像校验通过
+  Wrote 3072 bytes (103 compressed) at 0x00008000  ← 分区表
+  Hash of data verified.
+  Hard resetting via RTS pin... Done
+
+【开机日志（由 idf.py monitor 完整抓取）】
+  rst:0x15 (USB_UART_CHIP_RESET),boot:0x2a (SPI_FAST_FLASH_BOOT)
+  I (26) boot: ESP-IDF v5.4.4 2nd stage bootloader
+  I (28) boot.esp32s3: SPI Flash Size : 8MB
+  I (30) boot:  2 factory          factory app      00 00 00010000 00100000
+  I (190) boot: Loaded app from partition at offset 0x10000
+  I (200) cpu_start: cpu freq: 160000000 Hz
+  I (200) app_init: Project name:     s3eye_imu
+  I (200) app_init: App version:      fe028d8          ← 版本与提交一致
+  I (206) main_task: Calling app_main()
+
+  === ESP32-S3-EYE IMU 上报固件 (ESP-IDF) ===
+  chip=ESP32-S3  device=S3EYE-GROUP01  mac=94A9901C70D0
+
+  I (1422) temperature_sensor: Range [-10°C ~ 80°C], error < 1°C
+  I (1425) S3EYE: 扫描 I2C 总线 (SDA=4 SCL=5)…
+  I (1427) S3EYE:   发现 I2C 设备: 0x12
+  I (1442) S3EYE: QMA7981 WHO_AM_I = 0x90
+  I (1503) S3EYE: QMA7981 初始化完成（±2g，14bit，端口 0）
+
+  I (1503) gpio: GPIO[3]| InputEn: 0| OutputEn: 1| OpenDrain: 1| Pullup: 0| Pulldown: 0| Intr:0
+  I (1503) gpio: GPIO[48]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0
+  I (1625) S3EYE: LCD 初始化完成（240x240 ST7789, SPI3）
+
+  I (1715) S3EYE: WiFi 启动，SSID=YOUR_WIFI_SSID
+  I (2226) S3EYE: 按键 ADC 校准：空闲=4095，按下判定阈值<3595（按下不同键读数更低）
+  W (4124) S3EYE: WiFi 断开，重连中…
+
+【关键结论】
+  1. LED   —— GPIO[3] 报告 "OpenDrain: 1"，即开漏模式已正确生效。
+               官方文档要求必须开漏，否则拉高会烧 LED；本固件遵守。
+  2. LCD   —— ST7789 初始化成功（240x240，SPI3）。GPIO[48] 为背光，已输出高电平点亮。
+  3. 按键  —— ADC 校准成功：空闲读数 4095（接近 12bit 满量程，符合"无按键被上拉"的预期），
+               按下判定阈值 = 4095 - 500 = 3595。
+  4. IMU   —— QMA7981 初始化成功（±2g / 14bit），数据帧 seq 连续递增。
+  5. 版本  —— App version 与 Git 提交 fe028d8 一致，确认板内运行的就是本次代码。
+
+【说明】
+  WiFi 仍为占位符 YOUR_WIFI_SSID（用户既有设定：本机无 WiFi 网卡，走 USB 串口），
+  因此日志持续出现"WiFi 断开，重连中…"，不影响 USB 串口链路与本地反馈功能。
+
+【服务端侧确认】
+  GET /api/state →
+    connected=True  live=True  transport=serial  deviceId=S3EYE-GROUP01  seq=980
+  字段：acc_x_g=-0.319  acc_y_g=-0.5109  acc_z_g=...（真实 IMU 读数，持续刷新）
+
+【实物命令通道测试（直接向板子发送命令并读取回执）】
+
+  发送 {"cmd":"viewer_ack","request_id":"help-selftest-001"}   ← 此时板子处于空闲态
+    → {"type":"ack","request_id":"help-selftest-001","seq":1514,"status":"no_active_help"}
+    ★ 板端【拒绝】显示「对方已收到」—— 当堂验证硬指标② 在实物上成立
+
+  发送 {"cmd":"ping","request_id":"selftest-ping"}
+    → {"type":"ack","request_id":"selftest-ping","seq":1526,"status":"pong"}
+
+  发送 {"cmd":"help_reset","request_id":"selftest-reset"}
+    → {"type":"ack","request_id":"selftest-reset","seq":1536,"status":"idle"}
+
+  发送 {"cmd":"collect_once","request_id":"selftest-collect"}
+    → {"type":"ack","request_id":"selftest-collect","seq":1546,"status":"received"}
+    → 观测帧 {"device":"S3EYE-GROUP01","seq":1547,"request_id":"selftest-collect",
+              "acc_x_g":-0.3198,"acc_y_g":-0.5...,...}
+    ★ 第 2 周远程采集功能无回归；seq 严格递增 1546→1547，证明是新采样
+
+【实物按键验证进展（人工，需按下板上按键）】
+
+  ✅ 已确认（2026-09-28 佩戴者实测）：
+     · 按一下功能键 → 网页出现响应（板端上报成功 + 服务端接收）
+       原话："我手按开发板按键时，web端是有反应的"
+       注：服务端求助事件只存内存、不落盘，故此项为口述确认，无留存日志。
+
+  ⏳ 仍待补验：
+     · 按一下功能键 → 板端 LED 快闪 + 屏幕红底「求助已发送 / 等待回应」（本地反馈，需目视）
+     · 网页点「我已收到」 → 板端 LED 慢闪 + 屏幕绿底「对方已收到」；网页显示"板端已确认"
+     · 求助中再按键 → 屏幕「已取消」
+     · 拔掉网线后按键 → LED 与屏幕照常变化（当堂硬指标① 的最终证据）
+
+  取证流程（要留下可提交的日志）：
+     1) 启动服务：npm start（或双击 start.bat）
+     2) 另开终端抓板端日志：npm run firmware:monitor
+     3) 按一下板上功能键，观察两端输出：
+        板端应打印「按键：发起求助 (raw=...) help_id=help-...」
+        服务端应打印「[help] 收到求助 help-... ← S3EYE-GROUP01」
+     4) 网页 #help 页点「我已收到」→ 板端应打印收到 viewer_ack 并回执 ack_shown

@@ -1,0 +1,23 @@
+{
+  "name": "imu-monitor",
+  "version": "1.0.0",
+  "description": "ESP32-S3-EYE 三轴传感器实时 Web 监控平台（仅显示真实硬件数据，本机即服务器）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "ports": "node -e \"require('serialport').SerialPort.list().then(p=>console.log(p))\"",
+    "test": "node test/acceptance-test.js",
+    "test:help": "node test/help-test.js",
+    "firmware:build": "cd firmware/s3eye_imu_idf && C:/Espressif/python_env/idf5.4_py3.11_env/Scripts/python.exe ../../scripts/idfwrap.py build",
+    "firmware:flash": "cd firmware/s3eye_imu_idf && C:/Espressif/python_env/idf5.4_py3.11_env/Scripts/python.exe ../../scripts/idfwrap.py flash -p COM4",
+    "firmware:monitor": "cd firmware/s3eye_imu_idf && C:/Espressif/python_env/idf5.4_py3.11_env/Scripts/python.exe ../../scripts/idfwrap.py monitor -p COM4",
+    "wifi:set": "C:/Espressif/python_env/idf5.4_py3.11_env/Scripts/python.exe scripts/set_wifi.py"
+  },
+  "keywords": ["esp32", "s3-eye", "qma7981", "imu", "serial", "realtime", "dashboard"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "serialport": "^13.0.0",
+    "ws": "^8.21.3"
+  }
+}

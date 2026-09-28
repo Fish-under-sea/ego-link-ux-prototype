@@ -1,0 +1,35 @@
+# ---- 依赖 ----
+node_modules/
+
+# ---- ESP-IDF 构建产物（可重新生成，勿提交）----
+firmware/s3eye_imu_idf/build/
+firmware/s3eye_imu_idf/sdkconfig.old
+firmware/s3eye_imu_idf/managed_components/
+firmware/s3eye_imu_idf/dependencies.lock
+
+# ---- 本地私密配置（含真实 WiFi 密码，绝不提交）----
+firmware/s3eye_imu_idf/main/app_config.local.h
+
+# ---- 运行时数据（真实采集数据，本地保留）----
+data/*.ndjson
+data/records.*.ndjson
+recordings/*.csv
+
+# ---- 临时/调试文件 ----
+*.log
+_*.log
+_idf*.log
+server.log
+# 注意：test/.test-config.json 是测试夹具（无敏感信息，被 acceptance/e2e/verify/
+# help/storage/ws 等多个测试引用），必须纳入版本控制 —— 否则 clone 后各测试
+# 会退回到默认配置（autoDetect=true），连上真实板子产生"停采"类假失败。
+test/.test-data/
+
+# ---- 系统文件 ----
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ---- 本地备份（临时）----
+*.bak.*
+sdkconfig.bak*

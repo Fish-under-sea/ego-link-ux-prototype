@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ESP32-S3-EYE 三轴传感器监控</title>
+<link rel="stylesheet" href="/style.css?v=8" />
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ 顶栏（所有页面常驻） ============ -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">IMU</div>
+      <div class="brand-text">
+        <h1>ESP32-S3-EYE 三轴传感器监控</h1>
+        <p class="sub">QMA7981 加速度计 · 板端采集 → 本机服务 → 浏览器 &nbsp;|&nbsp; 全程真实数据，无模拟</p>
+      </div>
+    </div>
+    <div class="status-area">
+      <div id="statusPill" class="pill pill-off"><span class="dot"></span><span id="statusText">未连接</span></div>
+      <div id="staleBadge" class="badge badge-stale hidden">未更新</div>
+      <div class="dev-chip">
+        <span class="dev-k">设备</span>
+        <span id="deviceId" class="dev-v mono">—</span>
+        <span id="deviceCheck" class="badge-dev neutral">未设本组标识</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============ 状态横幅（所有页面常驻） ============ -->
+  <section id="offlineBanner" class="banner">
+    <div class="banner-icon">⚠</div>
+    <div class="banner-body">
+      <strong id="offlineTitle">等待开发板数据</strong>
+      <p id="offlineHint">设备拔出或离线时，此处不会显示任何数值。</p>
+    </div>
+  </section>
+
+  <!-- ============ 分页导航 ============ -->
+  <nav class="pagenav" id="pageNav">
+    <a href="#live"    class="pagetab" data-page="live">实时监控</a>
+    <a href="#collect" class="pagetab" data-page="collect">远程采集</a>
+    <a href="#help"    class="pagetab" data-page="help">教学求助<span id="helpBadge" class="tab-badge hidden"></span></a>
+    <a href="#cam"     class="pagetab" data-page="cam">摄像头</a>
+    <a href="#records" class="pagetab" data-page="records">记录与设备</a>
+  </nav>
+
+  <main class="pages">
+
+    <!-- ==================== ① 实时监控 ==================== -->
+    <section class="page" data-page="live">
+      <div class="grid">
+
+        <!-- 姿态 + 三轴 -->
+        <section class="card hero">
+          <div class="card-head">
+            <h2>实时姿态</h2>
+            <span id="imuTag" class="tag">等待板端上报</span>
+          </div>
+          <div class="hero-body">
+            <div class="level-wrap">
+              <div class="level">
+                <div class="level-cross"></div>
+                <div class="level-ring"></div>
+                <div id="levelDot" class="level-dot"></div>
+              </div>
+              <div class="level-cap" id="levelCap">重力方向（水平放置时居中）</div>
+              <button id="btnLevelZero" class="level-zero" type="button">水平归零</button>
+            </div>
+            <div class="axes" id="imuPanel">
+              <div class="imu-empty">等待设备上报 acc_*_g / acc_*_ms2 真实数据…</div>
+            </div>
+          </div>
+          <p class="hint">静止水平放置时 <b>Z ≈ +1 g ≈ +9.8 m/s²</b>，X、Y 接近 0。数值由本组设备实时上报，<b>页面未写死任何值</b>。</p>
+        </section>
+
+        <!-- 时间 / 设备核对 -->
+        <section class="card meta-card">
+          <div class="card-head"><h2>来源与时间核对</h2></div>
+          <div class="kv"><span class="k">设备标识</span><span class="v mono" id="mDeviceId">—</span></div>
+          <div class="kv"><span class="k">MAC</span><span class="v mono" id="mMac">—</span></div>
+          <div class="kv"><span class="k">传输方式</span><span class="v" id="mTransport">—</span></div>
+          <div class="kv"><span class="k">板端时间</span><span class="v mono" id="boardTime">—</span></div>
+          <div class="kv"><span class="k">服务端收到</span><span class="v mono" id="recvTime">—</span></div>
+          <div class="kv"><span class="k">时间偏差</span><span class="v mono" id="skew">—</span></div>
+          <div class="kv"><span class="k">最近更新</span><span class="v mono" id="lastUpdate">—</span></div>
+        </section>
+
+        <!-- 趋势曲线 -->
+        <section class="card chart-card">
+          <div class="card-head">
+            <h2>趋势曲线 · 三轴</h2>
+            <div class="chart-legend">
+              <span class="lg lg-x">X</span><span class="lg lg-y">Y</span><span class="lg lg-z">Z</span>
+              <button id="btnChartPause" class="mini-btn" type="button" title="暂停/继续波形刷新（其他面板仍实时）">暂停</button>
+              <button id="btnChartAC" class="mini-btn on" type="button" title="去直流：减去各轴均值，三条曲线叠在同一水平线上，便于对比波形">去直流</button>
+              <select id="chartRange" class="mini-select" title="Y 轴量程：自动=按波形自适应（推荐）；固定档位可锁死刻度">
+                <option value="auto" selected>自动</option>
+                <option value="0.5">±0.5g</option>
+                <option value="1">±1g</option>
+                <option value="2">±2g</option>
+              </select>
+              <select id="chartUnit" class="mini-select" title="切换单位">
+                <option value="g">g</option>
+                <option value="ms2">m/s²</option>
+              </select>
+            </div>
+          </div>
+          <canvas id="mainChart" height="240"></canvas>
+          <p id="chartHint" class="hint">三轴加速度实时曲线（X 红 / Y 绿 / Z 蓝），窗口 10 秒。点「去直流」可把三条曲线叠到同一水平线，便于对比波形。数据由本组设备实时上报，页面未写死任何值。</p>
+        </section>
+
+      </div>
+    </section>
+
+    <!-- ==================== ② 远程采集（第 2 周功能） ==================== -->
+    <section class="page" data-page="collect">
+      <div class="grid">
+
+        <!-- 采集控制 -->
+        <section class="card">
+          <div class="card-head">
+            <h2>远程采集</h2>
+            <span id="collectMode" class="tag">检测中…</span>
+          </div>
+          <p class="hint">
+            点「采集一次最新数据」会向开发板下发一次<b>立即采集</b>命令。
+            本次结果只认带 <code>request_id</code> 的新观测，<b>绝不拿数据库里的旧值冒充</b>。
+          </p>
+          <div class="collect-actions">
+            <button id="btnCollect" class="btn btn-primary">采集一次最新数据</button>
+            <button id="btnReportToggle" class="btn btn-ghost">暂停周期上报</button>
+          </div>
+          <div id="collectChannel" class="ctrl-note"></div>
+        </section>
+
+        <!-- 请求状态时间线 -->
+        <section class="card">
+          <div class="card-head">
+            <h2>本次请求状态</h2>
+            <span id="collectReqId" class="mono req-id">—</span>
+          </div>
+          <ol id="collectSteps" class="steps"></ol>
+          <div id="collectNote" class="ctrl-note"></div>
+        </section>
+
+        <!-- 本次新观测 -->
+        <section class="card">
+          <div class="card-head">
+            <h2>本次新观测</h2>
+            <span id="collectSim" class="badge-sim hidden">模拟</span>
+          </div>
+          <div id="collectObs" class="obs-empty">尚未发起采集请求。</div>
+        </section>
+
+      </div>
+    </section>
+
+    <!-- ==================== ③ 教学求助（第 3 周功能） ==================== -->
+    <section class="page" data-page="help">
+      <div class="grid">
+
+        <!-- 求助状态 -->
+        <section class="card help-hero">
+          <div class="card-head">
+            <h2>教学求助 · 当前状态</h2>
+            <span id="helpTag" class="tag">暂无求助</span>
+          </div>
+          <div id="helpAlert" class="help-alert">
+            <div class="ha-icon">·</div>
+            <div class="ha-body">
+              <strong id="helpTitle">当前没有求助</strong>
+              <p id="helpDesc">佩戴者按下开发板上的功能键后，这里会显示求助，并提示你回应。</p>
+            </div>
+          </div>
+          <div class="collect-actions">
+            <button id="btnHelpAck" class="btn btn-primary" disabled>我已收到</button>
+            <button id="btnHelpCancel" class="btn btn-ghost" disabled>取消求助</button>
+            <button id="btnHelpReset" class="btn btn-ghost">清除记录</button>
+          </div>
+          <div id="helpChannel" class="ctrl-note"></div>
+        </section>
+
+        <!-- 状态时间线 -->
+        <section class="card">
+          <div class="card-head">
+            <h2>状态时间线</h2>
+            <span id="helpId" class="mono req-id">—</span>
+          </div>
+          <ol id="helpSteps" class="steps"></ol>
+          <div id="helpNote" class="ctrl-note"></div>
+        </section>
+
+        <!-- 证据链 -->
+        <section class="card">
+          <div class="card-head"><h2>证据链（本地 → 远端 → 回应）</h2></div>
+          <div id="helpEvidence" class="obs-empty">尚无求助记录。</div>
+          <p class="hint">
+            <b>本地确认</b>由板端 LED + 屏幕完成，<b>不依赖网络</b>——断开外网按键，板子照样闪灯、显示「求助已发送」。<br>
+            <b>远端显示</b>只有服务端真正收到求助事件才会出现；<br>
+            <b>「对方已收到」</b>只有板端收到回应命令并回执后才显示——<b>没有证据绝不显示</b>。
+          </p>
+        </section>
+
+      </div>
+    </section>
+
+    <!-- ==================== 摄像头 ==================== -->
+    <section class="page" data-page="cam">
+      <div class="grid">
+
+        <section class="card cam-hero">
+          <div class="card-head">
+            <h2>板载摄像头 · 实时画面</h2>
+            <span id="camTag" class="tag">未开启</span>
+          </div>
+          <div class="cam-wrap">
+            <img id="camView" class="cam-view hidden" alt="开发板摄像头画面">
+            <div id="camPlaceholder" class="cam-placeholder">
+              点下方「开启实时画面」，开发板开始推送 OV2640 采集的 JPEG 帧
+            </div>
+          </div>
+          <div class="collect-actions">
+            <button id="btnCamStart" class="btn btn-primary">开启实时画面</button>
+            <button id="btnCamStop"  class="btn btn-ghost" disabled>停止</button>
+            <button id="btnCamShot"  class="btn btn-ghost">抓拍一帧</button>
+          </div>
+          <div class="cam-controls">
+            <label>直播分辨率
+              <select id="camSize">
+                <option value="5">240x240</option>
+                <option value="6" selected>320x240（QVGA）</option>
+                <option value="8">400x296</option>
+                <option value="9">480x320</option>
+                <option value="10">640x480（VGA）</option>
+                <option value="11">800x600</option>
+                <option value="12">1024x768</option>
+              </select>
+            </label>
+            <label>画质
+              <select id="camQuality">
+                <option value="8">高（更清晰、更大）</option>
+                <option value="12" selected>中</option>
+                <option value="20">低（更省带宽）</option>
+                <option value="30">很低</option>
+              </select>
+            </label>
+            <label>帧率
+              <select id="camFps">
+                <option value="2">2 fps</option>
+                <option value="5" selected>5 fps</option>
+                <option value="10">10 fps</option>
+                <option value="15">15 fps</option>
+              </select>
+            </label>
+            <label>抓拍分辨率
+              <select id="camShotSize">
+                <option value="8">400x296</option>
+                <option value="10" selected>640x480（VGA）</option>
+                <option value="11">800x600</option>
+                <option value="12">1024x768</option>
+                <option value="15">1600x1200（UXGA）</option>
+              </select>
+            </label>
+            <button id="btnCamApply" class="btn btn-ghost">应用参数</button>
+          </div>
+          <div id="camNote" class="ctrl-note"></div>
+        </section>
+
+        <!-- 抓拍快照：与直播流分开 -->
+        <section class="card">
+          <div class="card-head">
+            <h2>抓拍快照</h2>
+            <span id="camShotTag" class="tag">还没有抓拍</span>
+          </div>
+          <div class="cam-wrap cam-shot-wrap">
+            <img id="camShot" class="cam-view hidden" alt="抓拍快照">
+            <div id="camShotPlaceholder" class="cam-placeholder">
+              点上方「抓拍一帧」，板端会<b>临时切到你选的分辨率</b>拍一张高清单张，<br>
+              拍完自动切回直播分辨率 —— <b>不影响正在进行的直播流</b>。
+            </div>
+          </div>
+          <div class="collect-actions">
+            <a id="camShotDownload" class="btn btn-ghost hidden" download="snapshot.jpg">下载这一张</a>
+            <span id="camShotInfo" class="ctrl-note"></span>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2>链路状态</h2></div>
+          <div id="camStats" class="obs-grid"></div>
+          <p class="hint">
+            画面来自板载 <b>OV2640</b>（DVP 并口，XCLK=GPIO15 / PCLK=GPIO13 / D0-D7=GPIO11,9,8,10,12,18,17,16），
+            板端直接输出 JPEG，base64 内联后<b>复用既有上行链路</b>（USB 串口 / WiFi）上报，
+            服务端再以 <b>MJPEG</b> 转发给浏览器。<br>
+            <b>不需要给板子写 HTTP 服务</b>：板子始终是客户端，服务端连不上它，所以画面是「推」上来的；
+            这也意味着<b>拔掉 USB 走 WiFi 时同一套逻辑照样成立</b>。
+          </p>
+        </section>
+
+      </div>
+    </section>
+
+    <!-- ==================== ④ 记录与设备 ==================== -->
+    <section class="page" data-page="records">
+      <div class="grid">
+
+        <!-- 原始记录 -->
+        <section class="card records-card">
+          <div class="card-head">
+            <h2>原始记录</h2>
+            <div class="rec-tools">
+              <select id="deviceSelect" class="mini-select" title="按设备筛选"><option value="">本组设备</option></select>
+              <select id="limitSelect" class="mini-select">
+                <option value="20">最近 20 条</option>
+                <option value="50" selected>最近 50 条</option>
+                <option value="100">最近 100 条</option>
+              </select>
+              <button id="btnQuery" class="btn btn-ghost btn-sm">查询</button>
+              <a id="btnCsv" class="btn btn-ghost btn-sm" download>导出 CSV</a>
+            </div>
+          </div>
+          <div id="recordsTable" class="records">
+            <div class="empty">点击「查询」加载落盘的真实记录（一帧观测 = 一条记录）。</div>
+          </div>
+        </section>
+
+        <!-- 连接与调试（可折叠） -->
+        <section class="card tools-card">
+          <details>
+            <summary>连接设置与调试</summary>
+            <div class="controls">
+              <div class="ctrl">
+                <label>串口（USB 调试通道）</label>
+                <select id="portSelect"><option value="">自动识别…</option></select>
+              </div>
+              <div class="ctrl">
+                <label>波特率</label>
+                <select id="baudSelect">
+                  <option>9600</option><option>19200</option><option>38400</option>
+                  <option>57600</option><option>74880</option>
+                  <option selected>115200</option><option>230400</option><option>460800</option><option>921600</option>
+                </select>
+              </div>
+              <div class="ctrl btns">
+                <button id="btnConnect" class="btn btn-primary">连接设备</button>
+                <button id="btnDisconnect" class="btn" disabled title="释放串口，便于烧录">释放串口</button>
+                <button id="btnRefresh" class="btn btn-ghost">刷新端口</button>
+              </div>
+              <div class="ctrl btns">
+                <button id="btnDiag" class="btn btn-ghost">诊断</button>
+                <button id="btnProbe" class="btn btn-ghost">波特率探测</button>
+                <button id="btnRecord" class="btn btn-ghost">开始记录</button>
+              </div>
+              <label class="chk"><input type="checkbox" id="chkAuto" checked /> 自动重连</label>
+            </div>
+            <div class="ctrl-note">
+              本机电脑即服务器（<code>0.0.0.0:8080</code>），开发板经 <b>USB 串口</b>接入。
+              烧录前请先点「释放串口」。
+            </div>
+            <pre id="diagOut" class="diag hidden"></pre>
+            <div class="log-head">
+              <span>原始数据</span>
+              <button id="btnClearLog" class="btn btn-ghost btn-sm">清空</button>
+            </div>
+            <div id="rawLog" class="log"></div>
+          </details>
+        </section>
+
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="foot">所有数值均由 ESP32 真实上报；停采保留旧值并提示「未更新」，拔线 / 释放串口立即清空。</footer>
+</div>
+<script src="/app.js?v=20"></script>
+</body>
+</html>

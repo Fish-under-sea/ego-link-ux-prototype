@@ -6,15 +6,14 @@ secrets.*
 *.local
 credentials.*
 
-# ---- 构建产物 ----
+# ---- 构建产物（带目录限定，避免误伤 prev/ 子项目）----
 .pio/
 .pioenvs/
 .piolibdeps/
-build/
+board/build/
 dist/
 *.bin
 *.elf
-*.map
 *.hex
 
 # ---- 编辑器与系统 ----
@@ -25,12 +24,12 @@ Thumbs.db
 desktop.ini
 .DS_Store
 
-# ---- 运行时数据 ----
+# ---- 运行时数据（仅本工程的 Python 服务端，勿影响 prev/ 子项目）----
 server/data/
+server/logs/
+server/*.log
 *.db
 *.sqlite3
-server/logs/
-*.log
 
 # ---- 临时笔记 ----
 docs/_*

@@ -1,0 +1,19 @@
+/* =====================================================================
+ * 本地私密配置（模板）
+ *
+ * 用法：复制本文件为 app_config.local.h，填入真实值即可。
+ *
+ *     cp app_config.local.h.example app_config.local.h
+ *
+ * app_config.local.h 已被 .gitignore 忽略，【不会】提交到仓库 ——
+ * 因此真实 WiFi 密码放在这里最安全。
+ * app_config.h 会自动 include 它，并用它覆盖默认占位符。
+ * ===================================================================== */
+
+#define APP_WIFI_SSID   "你的WiFi名称"      /* 必须是 2.4GHz —— ESP32-S3 不支持 5GHz */
+#define APP_WIFI_PASS   "你的WiFi密码"
+
+#define APP_SERVER_HOST "10.1.41.112"       /* 运行 server.js 的电脑 IP（局域网内可达） */
+#define APP_SERVER_PORT 8080                /* 与服务端端口一致 */
+
+#define APP_DEVICE_ID   "S3EYE-GROUP01"     /* 与服务端 config.json 的 expectedDeviceId 一致 */
