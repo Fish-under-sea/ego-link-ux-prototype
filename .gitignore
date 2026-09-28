@@ -70,6 +70,7 @@ dist/
 
 # 测试运行时数据（自检脚本产生）
 test/.test-data/
+test/.test-data/*
 
 test/.nl-test-config.json
 test/.nl-test-fb-config.json
