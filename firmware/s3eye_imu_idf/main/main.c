@@ -8,8 +8,8 @@
  * 硬件依据（来自官方资料，非猜测）：
  *   - ESP32-S3-EYE 无 USB-UART 桥接芯片，板载 I2C：SDA=GPIO4 / SCL=GPIO5
  *     （esp-bsp: BSP_I2C_SDA=GPIO_NUM_4, BSP_I2C_SCL=GPIO_NUM_5）
- *   - IMU QMA6100P：地址 0x12，ID 寄存器 0x00 = 0x90（本板实测），数据寄存器 X=0x01 Y=0x03 Z=0x05,
- *     写 0x0F=0x01 设 ±2g、0x11=0x84 进入 active；数据右对齐，4096 LSB/g（满量程 8191）
+ *   - IMU QMA6100P：地址 0x12，ID 寄存器 0x00 = 0x90（本板实测），数据寄存器 X=0x01 Y=0x03 Z=0x05，
+ *     写 0x0F=0x01 设 ±2g、0x11=0x84 进入 active；数据右对齐，4096 LSB/g
  *   - 单位核对：静止水平放置时 Z 轴应约 +1g ≈ +9.8 m/s²
  *   - 时间核对：板端 NTP 取 UTC 时间戳，服务端另记接收时间，两者可对照
  * ===================================================================== */
@@ -243,10 +243,6 @@ static bool imu_read(int16_t out[3])
     /* QMA6100P：与官方驱动 esp-bsp/components/qma6100p 一致
      *   raw = (int16_t)((HIGH << 8) + LOW) / 4;   // 整数除法得设备值
      * 实测依据：本板静止时该值配合 4096 LSB/g 得合矢量约 1.0g。 */
-    /* QMA6100P：与官方驱动 esp-bsp/components/qma6100p 一致，
-     *   raw = (int16_t)((HIGH << 8) + LOW) / 4;   // 整数除法得设备值
-     * 实测依据：本板静止时该值配合 4096 LSB/g 得合矢量约 1.0g。 */
-     * 但不同批次芯片的寄存器对齐方式可能不同。输出原始 16bit 以便诊断。 */
     out[0] = (int16_t)(x16 / 4);
     out[1] = (int16_t)(y16 / 4);
     out[2] = (int16_t)(z16 / 4);
