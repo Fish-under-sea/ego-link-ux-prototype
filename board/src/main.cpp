@@ -1,7 +1,7 @@
 // 第 1 周：构建开发板传感数据采集与 Web 展示系统（板端部分）
 // 链路：板端读取 IMU -> Wi-Fi 上传 -> 服务端接收/存储 -> Web 读取并显示
 // 观测记录最小字段：设备标识、传感源、记录标识、采集状态、数据与单位、
-//                   采集时间/时间质量、服务端接收时间（接收时间由服务端补）
+//                   采集时间/时间质量（服务端接收时间由服务端补）
 #include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -18,11 +18,13 @@ static constexpr int kPinImuSda = 4;
 static constexpr int kPinImuScl = 5;
 static constexpr uint32_t kSampleIntervalMs = 1000;
 static constexpr int kSamplesPerObservation = 8;
+static constexpr int kMaxPostAttempts = 3;
 
 static ImuQma6100p g_imu;
 static String g_deviceId;
 static uint32_t g_seq = 0;
 static uint32_t g_uploadFailCount = 0;
+static uint32_t g_uploadOkCount = 0;
 static bool g_timeSynced = false;
 
 static String macSuffix() {
@@ -56,7 +58,8 @@ static bool connectWifi() {
     Serial.println("[net] Wi-Fi 连接失败");
     return false;
   }
-  Serial.printf("[net] 已连接, IP=%s RSSI=%d dBm\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+  Serial.printf("[net] 已连接, IP=%s RSSI=%d dBm\n",
+                WiFi.localIP().toString().c_str(), WiFi.RSSI());
   return true;
 }
 
@@ -64,8 +67,7 @@ static void syncTime() {
   configTzTime("CST-8", "ntp.aliyun.com", "cn.pool.ntp.org");
   Serial.print("[time] SNTP 对时");
   for (int i = 0; i < 20; i++) {
-    time_t now = time(nullptr);
-    if (now > 1700000000) {
+    if (time(nullptr) > 1700000000) {
       g_timeSynced = true;
       Serial.printf(" 成功: %s\n", isoNow().c_str());
       return;
@@ -92,8 +94,9 @@ static bool sampleOnce(float& ax, float& ay, float& az) {
   return true;
 }
 
+// 返回 true 表示服务端已确认接收（HTTP 2xx）
 static bool postObservation(float ax, float ay, float az, const String& observedAt,
-                           const String& timeQuality, bool& httpOk) {
+                           const String& timeQuality, int& outCode, String& outErr) {
   StaticJsonDocument<768> doc;
   doc["device_id"] = g_deviceId;
   doc["sensor"] = "imu_accel";
@@ -118,16 +121,28 @@ static bool postObservation(float ax, float ay, float az, const String& observed
   HTTPClient http;
   String url = String("http://") + EYE_SERVER_HOST + ":" + String(EYE_SERVER_PORT) + "/api/observations";
   if (!http.begin(client, url)) {
-    Serial.println("[post] http.begin 失败");
+    outCode = 0;
+    outErr = "http.begin 失败";
     return false;
   }
   http.addHeader("Content-Type", "application/json");
   http.setTimeout(5000);
+  http.setReuse(false);
+
   int code = http.POST(body);
-  httpOk = (code >= 200 && code < 300);
-  if (!httpOk) Serial.printf("[post] 失败 http=%d\n", code);
+  outCode = code;
+  bool ok = (code >= 200 && code < 300);
+  if (ok) {
+    // 显式取回并丢弃响应体，保证读完整包再收连接
+    String resp = http.getString();
+    (void)resp;
+  } else {
+    outErr = http.errorToString(code);
+  }
   http.end();
-  return httpOk;
+  client.stop();
+  delay(30);
+  return ok;
 }
 
 void setup() {
@@ -147,10 +162,12 @@ void setup() {
 
   Serial.print("[imu] 初始化 QMA6100P ... ");
   if (g_imu.begin(kPinImuSda, kPinImuScl)) {
-    Serial.printf("成功, CHIP_ID=0x%02X\n", g_imu.chipId());
-    float x, y, z;
-    if (g_imu.readAccelG(x, y, z)) {
-      Serial.printf("[imu] 自检合矢量 = %.3f g (静止应接近 1.000)\n", g_imu.magnitude(x, y, z));
+    Serial.printf("成功, CHIP_ID=0x%02X (期望 0x90)\n", g_imu.chipId());
+    int16_t rx, ry, rz;
+    if (g_imu.readAccelRaw(rx, ry, rz)) {
+      Serial.printf("[imu] 原始值 %d %d %d -> |a| = %.3f g（静止应接近 1.000）\n",
+                    rx, ry, rz,
+                    g_imu.magnitude(rx / 4096.0f, ry / 4096.0f, rz / 4096.0f));
     }
   } else {
     Serial.println("失败");
@@ -187,16 +204,23 @@ void loop() {
   }
 
   bool ok = false;
-  int attempts = 0;
-  while (!ok && attempts < 3) {
-    attempts++;
-    if (!postObservation(ax, ay, az, observedAt, timeQuality, ok) && attempts < 3) delay(1000);
+  int code = 0;
+  String err;
+  for (int attempt = 1; attempt <= kMaxPostAttempts && !ok; attempt++) {
+    ok = postObservation(ax, ay, az, observedAt, timeQuality, code, err);
+    if (!ok && attempt < kMaxPostAttempts) {
+      Serial.printf("[post] seq=%u 第 %d 次失败 http=%d (%s), 1s 后重试\n",
+                    (unsigned)g_seq, attempt, code, err.c_str());
+      delay(1000);
+    }
   }
   if (ok) {
-    Serial.printf("[post] seq=%u 上传成功\n", (unsigned)g_seq);
+    g_uploadOkCount++;
+    Serial.printf("[post] seq=%u 上传成功 (http=%d, 累计成功 %u)\n",
+                  (unsigned)g_seq, code, (unsigned)g_uploadOkCount);
   } else {
     g_uploadFailCount++;
-    Serial.printf("[post] seq=%u 上传失败(累计 %u 次), 本次数据丢弃（不做假补发）\n",
-                  (unsigned)g_seq, (unsigned)g_uploadFailCount);
+    Serial.printf("[post] seq=%u 上传失败 http=%d (%s) 累计失败 %u 次, 本次数据丢弃（不做假补发）\n",
+                  (unsigned)g_seq, code, err.c_str(), (unsigned)g_uploadFailCount);
   }
 }

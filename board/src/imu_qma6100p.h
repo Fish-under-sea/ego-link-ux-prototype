@@ -2,11 +2,15 @@
 #include <Arduino.h>
 #include <Wire.h>
 
-// QMA6100P 六轴 IMU（ESP32-S3-EYE 板载，I2C 地址 0x12，SDA=GPIO4，SCL=GPIO5）
-// 量程配置 ±2g / 4096 LSB/g，与板上既有固件实测一致
+// QMA6100P 加速度计（ESP32-S3-EYE 板载，I2C 地址 0x12，SDA=GPIO4，SCL=GPIO5）
+// 量程 ±2g，灵敏度 4096 LSB/g，WHO_AM_I = 0x90
+// 原始值解析依据乐鑫官方驱动 esp-bsp/components/qma6100p：
+//   raw = (int16_t)((HIGH_BYTE << 8) + LOW_BYTE) / 4
+//   （数据在 16 位寄存器中左对齐，故先合并再整体右移 2 位；不可只对高 12 位做算术右移）
 class ImuQma6100p {
  public:
   static constexpr uint8_t kAddr = 0x12;
+  static constexpr uint8_t kWhoAmI = 0x90;
   static constexpr float kLsbPerG = 4096.0f;
 
   bool begin(int sda, int scl) {
@@ -15,38 +19,42 @@ class ImuQma6100p {
     uint8_t id = 0;
     if (!readReg(0x00, id)) return false;
     chipId_ = id;
-    // 量程：±2g
-    writeReg(0x0F, 0x01);
-    // 带宽/ODR
-    writeReg(0x10, 0x00);
-    // 上电进入激活态
-    writeReg(0x11, 0x84);
+    writeReg(0x0F, 0x01);  // ±2g
+    writeReg(0x10, 0x00);  // 带宽/ODR
+    writeReg(0x11, 0x84);  // 上电进入激活态
     delay(30);
     ok_ = true;
     return true;
   }
 
   uint8_t chipId() const { return chipId_; }
+  bool ok() const { return ok_; }
 
-  // 读取加速度（单位 g）。accValid 表示底层读取是否成功。
-  bool readAccelG(float& ax, float& ay, float& az) {
+  bool readAccelRaw(int16_t& rx, int16_t& ry, int16_t& rz) {
     uint8_t b[6];
     if (!readRegs(0x01, b, 6)) return false;
-    ax = toG(b[0], b[1]);
-    ay = toG(b[2], b[3]);
-    az = toG(b[4], b[5]);
+    rx = decode(b[0], b[1]);
+    ry = decode(b[2], b[3]);
+    rz = decode(b[4], b[5]);
     return true;
   }
 
-  // 合矢量（静止时应接近 1 g）
+  bool readAccelG(float& ax, float& ay, float& az) {
+    int16_t rx, ry, rz;
+    if (!readAccelRaw(rx, ry, rz)) return false;
+    ax = rx / kLsbPerG;
+    ay = ry / kLsbPerG;
+    az = rz / kLsbPerG;
+    return true;
+  }
+
   float magnitude(float x, float y, float z) { return sqrtf(x * x + y * y + z * z); }
 
+  bool dumpRegs(uint8_t* out, size_t n) { return readRegs(0x00, out, n); }
+
  private:
-  static float toG(uint8_t lo, uint8_t hi) {
-    // 12 位左对齐：低 8 位 + 高 4 位
-    int16_t raw = (int16_t)((hi << 8) | lo) >> 4;
-    if (raw > 2047) raw -= 4096;
-    return (float)raw / kLsbPerG;
+  static int16_t decode(uint8_t lo, uint8_t hi) {
+    return (int16_t)((int16_t)((hi << 8) + lo) / 4);
   }
 
   bool readReg(uint8_t reg, uint8_t& val) { return readRegs(reg, &val, 1); }

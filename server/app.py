@@ -16,7 +16,17 @@ HOST = '0.0.0.0'
 PORT = int(os.environ.get('EYE_SERVER_PORT', '8000'))
 CST = timezone(timedelta(hours=8))
 REQUIRED_FIELDS = ['device_id', 'sensor', 'record_id', 'status']
-_state = {'n': 0}
+_state = {'n': 0, 'record_ids': set()}
+
+
+def _load_index():
+    """启动时载入已存 record_id，保证重发/重试不会产生重复记录。"""
+    for rec in _read_all():
+        rid = rec.get('record_id')
+        if rid:
+            _state['record_ids'].add(rid)
+    _state['n'] = _count_lines()
+    return len(_state['record_ids'])
 
 
 def _now_iso():
@@ -118,11 +128,18 @@ class Handler(BaseHTTPRequestHandler):
         if err:
             self.log_message('拒绝观测记录: %s', err)
             return self._send_json({'error': err}, 422)
+        rid = rec.get('record_id')
+        if rid in _state['record_ids']:
+            self.log_message('重复记录已忽略（幂等）: %s', rid)
+            return self._send_json({'ok': True, 'duplicate': True,
+                                    'record_id': rid}, 200)
         stored = dict(rec)
         stored['server_seq'] = _next_index()
         stored['received_at'] = _now_iso()
         stored['received_epoch'] = time.time()
         _append(stored)
+        if rid:
+            _state['record_ids'].add(rid)
         self.log_message('已存储 seq=%s record_id=%s |a|=%s', stored.get('seq'),
                          stored.get('record_id'), (stored.get('value') or {}).get('magnitude'))
         return self._send_json({'ok': True, 'server_seq': stored['server_seq'],
@@ -194,7 +211,9 @@ def main():
     print('  监听: http://%s:%d' % (HOST, PORT))
     print('  存储: %s' % OBS_FILE)
     print('  页面: http://<本机IP>:%d/' % PORT)
+    n = _load_index()
     print('  已存记录: %d 条' % _count_lines())
+    print('  去重索引: %d 个 record_id' % n)
     httpd = ThreadingHTTPServer((HOST, PORT), Handler)
     try:
         httpd.serve_forever()
