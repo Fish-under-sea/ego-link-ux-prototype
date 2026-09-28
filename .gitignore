@@ -1,6 +1,7 @@
 # ---- 密钥与本地配置（课程红线：不得进入仓库）----
 secrets.h
 secrets.*
+!secrets.example.h
 .env
 *.local
 credentials.*
@@ -32,5 +33,4 @@ server/logs/
 *.log
 
 # ---- 临时笔记 ----
-docs/_*.html
-docs/_*.json
+docs/_*
