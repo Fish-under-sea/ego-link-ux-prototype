@@ -116,7 +116,9 @@ static String buildFrame(float ax, float ay, float az, const String& requestId) 
   doc["device"] = g_deviceId;
   doc["mac"] = g_mac;
   doc["seq"] = g_seq;
-  doc["ts"] = (uint32_t)time(nullptr);
+  // 不发送 ts：平台的 ts 视为板端时间戳（秒）并与接收时间算偏差，
+  // 而我方墙钟由 iso 承载（含时区），避免平台显示巨额 skew。
+  doc["uptime_ms"] = (uint32_t)millis();
   doc["iso"] = g_timeSynced ? isoNow() : String("uptime_ms=") + String(millis());
   doc["acc_x_g"] = serialized(String(ax, 4));
   doc["acc_y_g"] = serialized(String(ay, 4));
