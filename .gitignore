@@ -65,3 +65,6 @@ server/*.jsonl
 
 docs/_*
 dist/
+
+# 测试运行时数据（自检脚本产生）
+test/.test-data/
