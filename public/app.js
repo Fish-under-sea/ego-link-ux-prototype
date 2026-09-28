@@ -1059,7 +1059,7 @@ async function loadHelp() {
 
 // ---------------------------------------------------------------- 分页路由
 // 单页应用 + hash 路由：地址栏 #live / #collect / #records，刷新不丢页面。
-const PAGES = ['live', 'collect', 'help', 'cam', 'records'];
+const PAGES = ['live', 'collect', 'help', 'cam', 'records', 'nl'];
 function showPage(name) {
   if (!PAGES.includes(name)) name = 'live';
   S.page = name;
@@ -1474,3 +1474,41 @@ loadHelp();
 connect();
 
 })();
+/* ---------- 第 4 周：语言助手页 ---------- */
+(function initNl() {
+  const NLJ = String.fromCharCode(10);
+  const input = document.getElementById('nlInput');
+  const btn = document.getElementById('nlSend');
+  const out = document.getElementById('nlOut');
+  if (!input || !btn || !out) return;
+  function renderNl(d) {
+    const L = [];
+    L.push('[' + (d.mode || '?') + (d.fallback ? '，语言服务不可达→回退基线' : '') + '] 意图=' + d.intent + (d.tool ? '  工具=' + d.tool : ''));
+    L.push('');
+    L.push(d.reply || '(无回复)');
+    if (d.clarify && d.clarify.length) { L.push(''); L.push('可选操作：' + d.clarify.join(' ／ ')); }
+    const e = d.evidence || null;
+    if (e) {
+      if (e.value && Object.keys(e.value).length) { L.push(''); L.push('证据数值：' + JSON.stringify(e.value)); }
+      L.push('来源：' + (e.device_id || '?') + '  seq=' + (e.seq != null ? e.seq : (e.request_id || '?')));
+      if (e.observed_at) L.push('采集时间：' + e.observed_at);
+      if (e.received_at) L.push('接收时间：' + e.received_at + (e.age_s != null ? '（' + e.age_s + 's 前）' : ''));
+      if (e.stale) L.push('状态：未更新（保留最后一次成功采集的值与原时间）');
+      if (e.stage) L.push('请求状态：' + e.stage + (e.observation ? '（本次新观测已回传）' : '（未收到新观测）'));
+      if (e.missing) L.push('状态：无该传感源的已保存记录');
+    }
+    out.textContent = L.join(NLJ);
+  }
+  async function send() {
+    const text = (input.value || '').trim();
+    if (!text) return;
+    out.textContent = '思考中…';
+    try {
+      const r = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+      renderNl(await r.json());
+    } catch (err) { out.textContent = '请求失败：' + err; }
+  }
+  btn.addEventListener('click', send);
+  input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') send(); });
+})();
+

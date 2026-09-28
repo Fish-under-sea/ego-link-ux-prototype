@@ -187,6 +187,7 @@ function writeRecording() {
 // 仅写入设备实际上报的采样，绝不生成/补插任何数据。                     //
 // ------------------------------------------------------------------ //
 
+let nlAssist = null;   // 第 4 周：自然语言助手（见 nl_assistant.js）
 let storageSeq = 0; // 服务端自增序号，与板端 seq 区分
 
 function ensureDataDir() {
@@ -1337,6 +1338,10 @@ function json(res, code, obj) {
   res.end(s);
 }
 
+nlAssist = require('./nl_assistant')({
+  config, readRecords, createCollectRequest, REQUESTS, state, collectTimeoutMs,
+});
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const p = url.pathname;
@@ -1505,6 +1510,14 @@ const server = http.createServer(async (req, res) => {
       },
       hints,
     });
+  }
+
+  // ---- 第 4 周：自然语言助手（受限工具 + 证据回复）----
+  if (p === '/api/ask' && req.method === 'POST') {
+    let body = {};
+    try { body = JSON.parse((await readBody(req)) || '{}'); } catch (_) {}
+    if (!nlAssist) return json(res, 500, { error: 'nl assistant not ready' });
+    return json(res, 200, await nlAssist.ask(body));
   }
 
   // ---- 远程采集：创建一次请求并下发 ----

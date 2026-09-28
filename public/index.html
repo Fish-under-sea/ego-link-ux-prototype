@@ -45,6 +45,7 @@
     <a href="#help"    class="pagetab" data-page="help">教学求助<span id="helpBadge" class="tab-badge hidden"></span></a>
     <a href="#cam"     class="pagetab" data-page="cam">摄像头</a>
     <a href="#records" class="pagetab" data-page="records">记录与设备</a>
+    <a href="#nl"      class="pagetab" data-page="nl">语言助手</a>
   </nav>
 
   <main class="pages">
@@ -304,6 +305,19 @@
     </section>
 
     <!-- ==================== ④ 记录与设备 ==================== -->
+    <section class="page" data-page="nl">
+      <div class="card">
+        <h2>自然语言助手（第 4 周）</h2>
+        <p class="muted">把一句话映射到两个受限工具：<b>查询已保存记录</b> 或 <b>请求一次新采集</b>。
+        回复只认真实证据（来源/采集时间/接收时间/状态）；越界请求（坐标、预测等）拒答；歧义输入会反问；
+        语言服务不可达时自动回退确定性基线并标注。</p>
+        <div class="nl-row">
+          <input id="nlInput" type="text" placeholder="例如：查看上次数据 / 重新采集一次 / 告诉我 GPS 坐标" />
+          <button id="nlSend" type="button">发送</button>
+        </div>
+        <pre id="nlOut" class="nl-out">等待输入…</pre>
+      </div>
+    </section>
     <section class="page" data-page="records">
       <div class="grid">
 

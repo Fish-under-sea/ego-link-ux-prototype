@@ -450,3 +450,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
   font-variant-numeric: tabular-nums;
 }
 
+
+/* ---- 第 4 周：语言助手页 ---- */
+.nl-row { display: flex; gap: 8px; margin: 12px 0; }
+.nl-row input { flex: 1; padding: 9px 12px; border: 1px solid #cfd4dc; border-radius: 8px; font-size: 14px; }
+.nl-out { white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; font-size: 13px; background: #f6f7f9; border: 1px solid #e3e6ea; border-radius: 8px; padding: 12px; min-height: 140px; }
