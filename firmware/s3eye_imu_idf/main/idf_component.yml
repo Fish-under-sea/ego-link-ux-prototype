@@ -1,0 +1,18 @@
+## 组件依赖声明
+##
+## esp32-camera：Espressif 官方 DVP 摄像头驱动（本板为 OV2640，走 DVP 并口）。
+## 注意：IDF 5.4 自带的 examples/peripherals/camera 是给 MIPI 摄像头用的
+## （esp_cam_sensor 组件），不适用于 S3-EYE 的 OV2640。
+##
+## ⚠ 本地化说明（2026-09-28）：
+##   本机网络无法访问 GitHub，组件管理器（走 components-file.espressif.com/GitHub）
+##   取不到包，因此把 esp32-camera 2.0.4 下载后放到工程根的
+##   components/espressif__esp32-camera/，并临时把本文件移出 main/，
+##   避免构建时触发组件管理器重新下载。
+##
+##   在能正常联网（或用国内镜像）的环境里，本文件保持原样即可，
+##   组件管理器会自动拉取；此时可删除 components/ 下手工放置的那份。
+dependencies:
+  espressif/esp32-camera: "^2.0.0"
+  idf:
+    version: ">=5.0"

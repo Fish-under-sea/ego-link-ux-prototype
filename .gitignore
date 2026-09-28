@@ -40,6 +40,8 @@ server.log
 # ESP-IDF 构建产物（可重新生成）
 firmware/s3eye_imu_idf/build/
 firmware/s3eye_imu_idf/sdkconfig.old
+firmware/s3eye_imu_idf/sdkconfig.s3eye
+firmware/s3eye_imu_idf/sdkconfig.s3eye.old
 firmware/s3eye_imu_idf/managed_components/
 firmware/s3eye_imu_idf/dependencies.lock
 sdkconfig.bak*
